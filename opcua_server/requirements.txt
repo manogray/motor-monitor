@@ -1,0 +1,2 @@
+asyncua==1.1.6
+aio-pika==9.5.7

@@ -1,0 +1,66 @@
+services:
+  mqtt-ingestor:
+    build: ./mqtt_ingestor
+    container_name: mqtt-ingestor
+    depends_on:
+      - rabbitmq
+    environment:
+      - MQTT_BROKER_REMOTE=lse.dev.br
+      - MQTT_BROKER_PORT=1883
+      - RABBITMQ_URL=ampq://guest:guest@rabbitmq:5672
+      - EXCHANGE_NAME=motor_exchange
+      - QUEUE_NAME=motor_data
+    networks:
+      - backend-network
+
+  opcua-server:
+    build: ./opcua_server
+    container_name: opcua-server
+    ports:
+      - "4840:4840"
+    depends_on:
+      - rabbitmq
+    environment:
+      - RABBITMQ_URL=ampq://guest:guest@rabbitmq:5672
+      - EXCHANGE_NAME=motor_exchange
+      - QUEUE_NAME=motor_data
+      - NAMESPACE=http://desafioback.com/motor50cv
+    networks:
+      - backend-network
+
+  api-service:
+    build: ./api_service
+    container_name: api-service
+    ports:
+      - "8000:8000"
+    depends_on:
+      - rabbitmq
+    networks:
+      - backend-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      - api-service
+    networks:
+      - backend-network
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - backend-network
+
+networks:
+  backend-network:
+    name: backend-network
+    driver: bridge
