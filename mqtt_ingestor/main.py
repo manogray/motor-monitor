@@ -6,6 +6,7 @@ import aio_pika
 import datetime
 
 from gmqtt import Client
+from models import ElectricalPayload, EnvironmentPayload, VibrationPayload
 from log_recorder import logger
 
 STOP = asyncio.Event()
@@ -26,13 +27,16 @@ class MqttIngestor:
     Class responsible to implements a microservice for ingesting MQTT messages from industrial sensors
     and forwarding them to RabbitMQ for further processing
     """
-    def __init__(self):
+    def __init__(self, config: dict = None):
+        if config is None:
+            config = dict()
+
         self.config = dict(
-            MQTT_BROKER=os.getenv("MQTT_BROKER_REMOTE"),
-            MQTT_PORT=int(os.getenv("MQTT_BROKER_PORT")),
-            RABBITMQ_URL=os.getenv("RABBITMQ_URL"),
-            EXCHANGE_NAME=os.getenv("EXCHANGE_NAME"),
-            QUEUE_NAME=os.getenv("QUEUE_NAME")
+            MQTT_BROKER=config.get("broker") if config.get("broker") else os.getenv("MQTT_BROKER_REMOTE"),
+            MQTT_PORT=config.get("port") if config.get("port") else int(os.getenv("MQTT_BROKER_PORT")),
+            RABBITMQ_URL=config.get("rabbitmq_url") if config.get("rabbitmq_url") else os.getenv("RABBITMQ_URL"),
+            EXCHANGE_NAME=config.get("rabbitmq_exchange") if config.get("rabbitmq_exchange") else os.getenv("EXCHANGE_NAME"),
+            QUEUE_NAME=config.get("rabbitmq_queue_name") if config.get("rabbitmq_queue_name") else os.getenv("QUEUE_NAME")
         )
         self.mqtt_client = Client("mqtt-ingestor")
         self.mqtt_client.on_message = self.on_message
@@ -67,20 +71,31 @@ class MqttIngestor:
         """
         try:
             data = json.loads(payload.decode())
-            message = {
-                "topic": topic,
-                "data": data,
-                "timestamp": datetime.datetime.now().isoformat()
-            }
+            validated = False
 
             if "electrical" in topic:
                 routing_key = "motor.electrical"
+                model = ElectricalPayload(**data)
+                validated = True
             elif "environment" in topic:
                 routing_key = "motor.environment"
+                model = EnvironmentPayload(**data)
+                validated = True
             elif "vibration" in topic:
                 routing_key = "motor.vibration"
+                model = VibrationPayload(**data)
+                validated = True
             else:
                 routing_key = "motor.data"
+                model = data
+
+            message = {
+                "timestamp": datetime.datetime.now().isoformat(),
+                "topic": topic,
+                "data": model.model_dump() if validated else model
+            }
+
+            logger.info(f"Processing received message: {data}")
 
             success = await self.send_to_rabbitmq(message, routing_key)
 

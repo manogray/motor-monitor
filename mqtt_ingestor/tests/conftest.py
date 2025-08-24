@@ -3,9 +3,11 @@ import sys
 import gmqtt
 import asyncio
 import importlib.util
+import aio_pika
+import logging
 
-from asyncua import Client, ua
 from pathlib import Path
+from mqtt_ingestor.main import MqttIngestor
 
 
 def pytest_addoption(parser):
@@ -55,6 +57,16 @@ def settings(pytestconfig):
 
 
 @pytest.fixture(scope="session")
+def test_log():
+    """
+    Configure a log to be used on tests
+    """
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+    return logger
+
+
+@pytest.fixture(scope="session")
 async def gmqtt_client(settings):
     """
     Retrieves MQTT client to perform tests
@@ -87,6 +99,65 @@ async def gmqtt_client(settings):
 
 
 @pytest.fixture(scope="session")
-def get_opcua_configs(settings):
-    return settings["OPCUA_SERVER"], settings["OPCUA_NAMESPACE"]
+def get_rabbitmq_config(settings):
+    """
+    Retrieve host URL and queue from RabbitMQ
 
+    :return: A tuple with RabbitMQ URL and RabbitMQ Queue name
+    """
+    return settings["RABBITMQ_URL"], settings["RABBITMQ_QUEUE_NAME"]
+
+
+@pytest.fixture
+def get_ingestor_instance(settings):
+    """
+    Create an MQTT Ingestor instance
+
+    :return: MQTT Ingestor instance
+    """
+    ingestor = MqttIngestor({
+        "broker": settings["MQTT_BROKER"],
+        "port": settings["MQTT_PORT"],
+        "rabbitmq_url": settings["RABBITMQ_URL"],
+        "rabbitmq_exchange": settings["RABBITMQ_EXCHANGE_NAME"],
+        "rabbitmq_queue_name": settings["RABBITMQ_QUEUE_NAME"]
+    })
+
+    return ingestor
+
+
+@pytest.fixture
+async def use_ingestor_connected(get_ingestor_instance):
+    """
+    Create an MQTT Ingestor instance and connect it to broker
+
+    :return: MQTT Ingestor instance
+    """
+    ingestor = get_ingestor_instance
+
+    await ingestor.connect_to_broker()
+
+    yield ingestor
+
+    await ingestor.mqtt_client.disconnect()
+
+
+@pytest.fixture
+async def use_rabbitmq_client(get_rabbitmq_config):
+    """
+    Create a RabbitMQ client and connect it to host
+
+    :return: A Tuple with RabbitMQ client instance and channel
+    """
+    rabbit_url, rabbit_queue = get_rabbitmq_config
+    connection = None
+    try:
+        connection = await aio_pika.connect_robust(rabbit_url)
+        channel = await connection.channel()
+
+        yield connection, channel
+
+    except Exception as e:
+        pytest.fail(f"Not possible to connect to RabbitMQ host: {e}")
+    finally:
+        await connection.close()

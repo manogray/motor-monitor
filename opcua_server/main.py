@@ -5,7 +5,6 @@ import aio_pika
 
 from log_recorder import logger
 from asyncua import Server, ua
-from asyncua.common.events import Event
 
 
 class OpcuaServer:
@@ -33,6 +32,7 @@ class OpcuaServer:
 
         :return: None
         """
+        logger.info("Setting history")
         historical_nodes = [
             self.nodeset["motor50cv"]["electrical"]['voltage_a'],
             self.nodeset["motor50cv"]["electrical"]['voltage_b'],
@@ -43,8 +43,7 @@ class OpcuaServer:
             self.nodeset["motor50cv"]["environment"]['case_temperature']
         ]
 
-        for node in historical_nodes:
-            await self.server.historize_node_data_change(node, period=None)
+        await self.server.historize_node_data_change(historical_nodes, period=None)
 
     async def setup_alarms(self):
         """
@@ -54,57 +53,66 @@ class OpcuaServer:
         """
         await self.create_alarm_condition(
             "OvervoltageAlarm",
+            self.nodeset["motor50cv"]["electrical"]["obj"],
             self.nodeset["motor50cv"]["electrical"]["voltage_a"],
-            lambda value: value > 242,  # 220 + 10%
+            lambda value: value > 242,
             "Overvoltage detected",
             700
         )
 
         await self.create_alarm_condition(
             "UndervoltageAlarm",
+            self.nodeset["motor50cv"]["electrical"]["obj"],
             self.nodeset["motor50cv"]["electrical"]["voltage_a"],
-            lambda value: value < 198,  # 220 - 10%
+            lambda value: value < 198,
             "Undervoltage detected",
             700
         )
 
         await self.create_alarm_condition(
             "OvercurrentAlarm",
+            self.nodeset["motor50cv"]["electrical"]["obj"],
             self.nodeset["motor50cv"]["electrical"]["current_a"],
-            lambda value: value > 11.55,  # 10.5 + 10%
+            lambda value: value > 11.55,
             "Overcurrent detected",
             700
         )
 
         await self.create_alarm_condition(
             "CaseTemperatureAlarm",
-            self.nodeset["motor50cv"]["electrical"]["case_temperature"],
+            self.nodeset["motor50cv"]["environment"]["obj"],
+            self.nodeset["motor50cv"]["environment"]["case_temperature"],
             lambda value: value > 60,
             "Case temperature critical",
             900
         )
 
-    async def create_alarm_condition(self, name, source_node, condition, message, severity):
+        logger.info(f"Alarms created: {self.alarm_conditions}")
+
+    async def create_alarm_condition(self, name, object_node, source_node, condition, message, severity):
         """
         Create an alarm condition
 
         :param name:
+        :param object_node:
         :param source_node:
         :param condition:
         :param message:
         :param severity:
         :return: None
         """
-        alarm = await self.server.get_event_generator()
+        logger.info(f"Creating {name} alarm")
 
-        alarm_condition = await alarm.add_property(2, name, ua.Variant(False, ua.VariantType.Boolean))
+        event_alarm = await self.server.create_custom_event_type(self.index, name)
+        event_alarm_generator = await self.server.get_event_generator(event_alarm, object_node)
 
         self.alarm_conditions[name] = {
-            'condition': condition,
-            'message': message,
-            'severity': severity,
-            'source': source_node,
-            'alarm': alarm_condition
+            "condition": condition,
+            "message": message,
+            "severity": severity,
+            "object": object_node,
+            "source": source_node,
+            "event_gen": event_alarm_generator
         }
 
     async def check_alarms(self):
@@ -114,7 +122,9 @@ class OpcuaServer:
         :return: None
         """
         while True:
+            logger.info("Checking alarms")
             for name, alarm_info in self.alarm_conditions.items():
+                logger.info(f"Check {name} alarm")
                 current_value = await alarm_info['source'].get_value()
                 if alarm_info['condition'](current_value):
                     await self.trigger_alarm(name, alarm_info, current_value)
@@ -130,11 +140,11 @@ class OpcuaServer:
         :param current_value:
         :return:
         """
-        event = Event(self.server.get_event_generator())
-        event.Severity = alarm_info['severity']
-        event.Message = ua.LocalizedText(f"{alarm_info['message']}. Current value: {current_value}")
-        event.SourceNode = alarm_info['source'].nodeid
-        await event.trigger()
+        event_gen = alarm_info.get("event_gen")
+        event_gen.event.Severity = alarm_info['severity']
+        event_gen.event.Message = ua.LocalizedText(f"{alarm_info['message']}. Current value: {current_value}")
+        event_gen.event.SourceNode = alarm_info['source'].nodeid
+        await event_gen.trigger()
 
         logger.warning(f"Alarm triggered: {name} - {alarm_info['message']}")
 
@@ -468,6 +478,10 @@ async def main():
 
     logger.info("Creating nodeset")
     await opcua.setup_nodeset()
+
+    await opcua.setup_history()
+
+    await opcua.setup_alarms()
 
     asyncio.create_task(opcua.consume_rabbitmq())
 

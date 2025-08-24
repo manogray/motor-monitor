@@ -5,11 +5,11 @@ services:
     depends_on:
       - rabbitmq
     environment:
-      - MQTT_BROKER_REMOTE=lse.dev.br
-      - MQTT_BROKER_PORT=1883
-      - RABBITMQ_URL=ampq://guest:guest@rabbitmq:5672
-      - EXCHANGE_NAME=motor_exchange
-      - QUEUE_NAME=motor_data
+      - MQTT_BROKER_REMOTE=${MQTT_HOST}
+      - MQTT_BROKER_PORT=${MQTT_PORT}
+      - RABBITMQ_URL=${RABBITMQ_URL}
+      - EXCHANGE_NAME=${RABBITMQ_EXCHANGE}
+      - QUEUE_NAME=${RABBITMQ_QUEUE}
     networks:
       - backend-network
 
@@ -21,10 +21,10 @@ services:
     depends_on:
       - rabbitmq
     environment:
-      - RABBITMQ_URL=ampq://guest:guest@rabbitmq:5672
-      - EXCHANGE_NAME=motor_exchange
-      - QUEUE_NAME=motor_data
-      - NAMESPACE=http://desafioback.com/motor50cv
+      - RABBITMQ_URL=${RABBITMQ_URL}
+      - EXCHANGE_NAME=${RABBITMQ_EXCHANGE}
+      - QUEUE_NAME=${RABBITMQ_QUEUE}
+      - NAMESPACE=${OPCUA_NAMESPACE}
     networks:
       - backend-network
 
@@ -41,6 +41,9 @@ services:
   grafana:
     image: grafana/grafana:latest
     container_name: grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
     ports:
       - "3000:3000"
     volumes:
