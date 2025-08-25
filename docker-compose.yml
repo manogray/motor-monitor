@@ -25,6 +25,8 @@ services:
       - EXCHANGE_NAME=${RABBITMQ_EXCHANGE}
       - QUEUE_NAME=${RABBITMQ_QUEUE}
       - NAMESPACE=${OPCUA_NAMESPACE}
+    volumes:
+      - ./data:/app/data
     networks:
       - backend-network
 
@@ -34,7 +36,9 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - rabbitmq
+      - opcua-server
+    volumes:
+      - ./data:/app/data
     networks:
       - backend-network
 

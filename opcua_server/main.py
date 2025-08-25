@@ -5,6 +5,8 @@ import aio_pika
 
 from log_recorder import logger
 from asyncua import Server, ua
+from database import SQLiteHistoryManager
+from typing import Any
 
 
 class OpcuaServer:
@@ -25,6 +27,7 @@ class OpcuaServer:
         self.alarm_conditions = dict()
         self.server = Server()
         self.index = None
+        self.history_manager = SQLiteHistoryManager()
 
     async def setup_history(self):
         """
@@ -33,6 +36,7 @@ class OpcuaServer:
         :return: None
         """
         logger.info("Setting history")
+
         historical_nodes = [
             self.nodeset["motor50cv"]["electrical"]['voltage_a'],
             self.nodeset["motor50cv"]["electrical"]['voltage_b'],
@@ -40,10 +44,14 @@ class OpcuaServer:
             self.nodeset["motor50cv"]["electrical"]['current_a'],
             self.nodeset["motor50cv"]["electrical"]['current_b'],
             self.nodeset["motor50cv"]["electrical"]['current_c'],
-            self.nodeset["motor50cv"]["environment"]['case_temperature']
+            self.nodeset["motor50cv"]["environment"]["temperature"],
+            self.nodeset["motor50cv"]["environment"]["humidity"],
+            self.nodeset["motor50cv"]["environment"]['case_temperature'],
+            self.nodeset["motor50cv"]["vibration"]["axial"],
+            self.nodeset["motor50cv"]["vibration"]["radial"]
         ]
 
-        await self.server.historize_node_data_change(historical_nodes, period=None)
+        await self.server.historize_node_data_change(historical_nodes)
 
     async def setup_alarms(self):
         """
@@ -103,8 +111,8 @@ class OpcuaServer:
         """
         logger.info(f"Creating {name} alarm")
 
-        event_alarm = await self.server.create_custom_event_type(self.index, name)
-        event_alarm_generator = await self.server.get_event_generator(event_alarm, object_node)
+        event_custom = await self.server.create_custom_event_type(self.index, name)
+        event_custom_generator = await self.server.get_event_generator(event_custom, object_node)
 
         self.alarm_conditions[name] = {
             "condition": condition,
@@ -112,7 +120,7 @@ class OpcuaServer:
             "severity": severity,
             "object": object_node,
             "source": source_node,
-            "event_gen": event_alarm_generator
+            "event_gen": event_custom_generator
         }
 
     async def check_alarms(self):
@@ -138,13 +146,20 @@ class OpcuaServer:
         :param name:
         :param alarm_info:
         :param current_value:
-        :return:
+        :return: None
         """
         event_gen = alarm_info.get("event_gen")
-        event_gen.event.Severity = alarm_info['severity']
+        event_gen.event.Severity = alarm_info["severity"]
         event_gen.event.Message = ua.LocalizedText(f"{alarm_info['message']}. Current value: {current_value}")
-        event_gen.event.SourceNode = alarm_info['source'].nodeid
+        event_gen.event.SourceNode = alarm_info["source"].nodeid
         await event_gen.trigger()
+
+        self.history_manager.store_event_alarm(
+            name,
+            alarm_info["severity"],
+            f"{alarm_info['message']}. Current value: {current_value}",
+            str(alarm_info["source"].nodeid)
+        )
 
         logger.warning(f"Alarm triggered: {name} - {alarm_info['message']}")
 
@@ -389,70 +404,222 @@ class OpcuaServer:
 
                 if voltage:
                     if "a" in current:
+                        if await electrical_node["voltage_a"].read_value() != voltage["a"]:
+                            name_class = await electrical_node["voltage_a"].read_browse_name()
+                            self.history_manager.store_variable_change(
+                                electrical_node["voltage_a"].nodeid,
+                                name_class.Name,
+                                voltage["a"]
+                            )
+
                         await electrical_node["voltage_a"].write_value(voltage["a"])
                         updated = True
                     if "b" in voltage:
+                        if await electrical_node["voltage_b"].read_value() != voltage["b"]:
+                            name_class = await electrical_node["voltage_b"].read_browse_name()
+                            self.history_manager.store_variable_change(
+                                electrical_node["voltage_b"].nodeid,
+                                name_class.Name,
+                                voltage["b"]
+                            )
+
                         await electrical_node["voltage_b"].write_value(voltage["b"])
                         updated = True
                     if "c" in voltage:
+                        if await electrical_node["voltage_c"].read_value() != voltage["c"]:
+                            name_class = await electrical_node["voltage_c"].read_browse_name()
+                            self.history_manager.store_variable_change(
+                                electrical_node["voltage_c"].nodeid,
+                                name_class.Name,
+                                voltage["c"]
+                            )
+
                         await electrical_node["voltage_c"].write_value(voltage["c"])
                         updated = True
                 if current:
                     if "a" in current:
+                        if await electrical_node["current_a"].read_value() != current["a"]:
+                            name_class = await electrical_node["current_a"].read_browse_name()
+                            self.history_manager.store_variable_change(
+                                electrical_node["current_a"].nodeid,
+                                name_class.Name,
+                                current["a"]
+                            )
+
                         await electrical_node["current_a"].write_value(current["a"])
                         updated = True
                     if "b" in current:
+                        if await electrical_node["current_b"].read_value() != current["b"]:
+                            name_class = await electrical_node["current_b"].read_browse_name()
+                            self.history_manager.store_variable_change(
+                                electrical_node["current_b"].nodeid,
+                                name_class.Name,
+                                current["b"]
+                            )
+
                         await electrical_node["current_b"].write_value(current["b"])
                         updated = True
                     if "c" in current:
+                        if await electrical_node["current_c"].read_value() != current["c"]:
+                            name_class = await electrical_node["current_c"].read_browse_name()
+                            self.history_manager.store_variable_change(
+                                electrical_node["current_c"].nodeid,
+                                name_class.Name,
+                                current["c"]
+                            )
+
                         await electrical_node["current_c"].write_value(current["c"])
                         updated = True
                 if power:
                     if "active" in power:
+                        if await electrical_node["power_active"].read_value() != power["active"]:
+                            name_class = await electrical_node["power_active"].read_browse_name()
+                            self.history_manager.store_variable_change(
+                                electrical_node["power_active"].nodeid,
+                                name_class.Name,
+                                power["active"]
+                            )
+
                         await electrical_node["power_active"].write_value(power["active"])
                         updated = True
                     if "reactive" in power:
+                        if await electrical_node["power_reactive"].read_value() != power["reactive"]:
+                            name_class = await electrical_node["power_reactive"].read_browse_name()
+                            self.history_manager.store_variable_change(
+                                electrical_node["power_reactive"].nodeid,
+                                name_class.Name,
+                                power["reactive"]
+                            )
+
                         await electrical_node["power_reactive"].write_value(power["reactive"])
                         updated = True
                     if "apparent" in power:
+                        if await electrical_node["power_apparent"].read_value() != power["apparent"]:
+                            name_class = await electrical_node["power_apparent"].read_browse_name()
+                            self.history_manager.store_variable_change(
+                                electrical_node["power_apparent"].nodeid,
+                                name_class.Name,
+                                power["apparent"]
+                            )
+
                         await electrical_node["power_apparent"].write_value(power["apparent"])
                         updated = True
                 if energy:
                     if "active" in energy:
+                        if await electrical_node["energy_active"].read_value() != energy["active"]:
+                            name_class = await electrical_node["energy_active"].read_browse_name()
+                            self.history_manager.store_variable_change(
+                                electrical_node["energy_active"].nodeid,
+                                name_class.Name,
+                                energy["active"]
+                            )
+
                         await electrical_node["energy_active"].write_value(energy["active"])
                         updated = True
                     if "reactive" in energy:
+                        if await electrical_node["energy_reactive"].read_value() != energy["reactive"]:
+                            name_class = await electrical_node["energy_reactive"].read_browse_name()
+                            self.history_manager.store_variable_change(
+                                electrical_node["energy_reactive"].nodeid,
+                                name_class.Name,
+                                energy["reactive"]
+                            )
+
                         await electrical_node["energy_reactive"].write_value(energy["reactive"])
                         updated = True
                     if "apparent" in energy:
+                        if await electrical_node["energy_apparent"].read_value() != energy["apparent"]:
+                            name_class = await electrical_node["energy_apparent"].read_browse_name()
+                            self.history_manager.store_variable_change(
+                                electrical_node["energy_apparent"].nodeid,
+                                name_class.Name,
+                                energy["apparent"]
+                            )
+
                         await electrical_node["energy_apparent"].write_value(energy["apparent"])
                         updated = True
 
                 if "powerFactor" in update_data:
+                    if await electrical_node["power_factor"].read_value() != update_data["powerFactor"]:
+                        name_class = await electrical_node["power_factor"].read_browse_name()
+                        self.history_manager.store_variable_change(
+                            electrical_node["power_factor"].nodeid,
+                            name_class.Name,
+                            update_data["powerFactor"]
+                        )
+
                     await electrical_node["power_factor"].write_value(update_data["powerFactor"])
                     updated = True
 
                 if "frequency" in update_data:
+                    if await electrical_node["frequency"].read_value() != update_data["frequency"]:
+                        name_class = await electrical_node["frequency"].read_browse_name()
+                        self.history_manager.store_variable_change(
+                            electrical_node["frequency"].nodeid,
+                            name_class.Name,
+                            update_data["frequency"]
+                        )
+
                     await electrical_node["frequency"].write_value(update_data["frequency"])
                     updated = True
             elif "environment" in routing_key:
                 if "temperature" in update_data:
+                    if await environment_node["temperature"].read_value() != update_data["temperature"]:
+                        name_class = await environment_node["temperature"].read_browse_name()
+                        self.history_manager.store_variable_change(
+                            environment_node["temperature"].nodeid,
+                            name_class.Name,
+                            update_data["temperature"]
+                        )
+
                     await environment_node["temperature"].write_value(update_data["temperature"])
                     updated = True
 
                 if "humidity" in update_data:
+                    if await environment_node["humidity"].read_value() != update_data["humidity"]:
+                        name_class = await environment_node["humidity"].read_browse_name()
+                        self.history_manager.store_variable_change(
+                            environment_node["humidity"].nodeid,
+                            name_class.Name,
+                            update_data["humidity"]
+                        )
+
                     await environment_node["humidity"].write_value(update_data["humidity"])
                     updated = True
 
                 if "caseTemperature" in update_data:
+                    if await environment_node["case_temperature"].read_value() != update_data["caseTemperature"]:
+                        name_class = await environment_node["case_temperature"].read_browse_name()
+                        self.history_manager.store_variable_change(
+                            environment_node["case_temperature"].nodeid,
+                            name_class.Name,
+                            update_data["caseTemperature"]
+                        )
+
                     await environment_node["case_temperature"].write_value(update_data["caseTemperature"])
                     updated = True
             elif "vibration" in routing_key:
                 if "axial" in update_data:
+                    if await vibration_node["axial"].read_value() != update_data["axial"]:
+                        name_class = await vibration_node["axial"].read_browse_name()
+                        self.history_manager.store_variable_change(
+                            vibration_node["axial"].nodeid,
+                            name_class.Name,
+                            update_data["axial"]
+                        )
+
                     await vibration_node["axial"].write_value(update_data["axial"])
                     updated = True
                 
                 if "radial" in update_data:
+                    if await vibration_node["radial"].read_value() != update_data["radial"]:
+                        name_class = await vibration_node["radial"].read_browse_name()
+                        self.history_manager.store_variable_change(
+                            vibration_node["radial"].nodeid,
+                            name_class.Name,
+                            update_data["radial"]
+                        )
+
                     await vibration_node["radial"].write_value(update_data["radial"])
                     updated = True
 
