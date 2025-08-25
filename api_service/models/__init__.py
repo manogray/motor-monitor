@@ -1,42 +1,21 @@
-from pydantic import BaseModel
-from datetime import datetime
+from tortoise import fields, models
 
 
-class ElectricalData(BaseModel):
-    timestamp: datetime
-    voltage_a: float
-    voltage_b: float
-    voltage_c: float
-    current_a: float
-    current_b: float
-    current_c: float
-    power_active: float
-    power_reactive: float
-    power_apparent: float
-    energy_active: float
-    energy_reactive: float
-    energy_apparent: float
-    power_factor: float
-    frequency: float
+class VariableChanges(models.Model):
+    id = fields.IntField(pk=True)
+    node_id = fields.CharField(max_length=200, null=False)
+    variable_name = fields.CharField(max_length=200, null=False)
+    timestamp = fields.DatetimeField(null=False)
+    value = fields.FloatField()
+
+    class Meta:
+        table = "variable_changes"
 
 
-class EnvironmentData(BaseModel):
-    timestamp: datetime
-    temperature: float
-    humidity: float
-    case_temperature: float
-
-
-class VibrationData(BaseModel):
-    timestamp: datetime
-    axial: float
-    radial: float
-
-
-class AlarmEvent(BaseModel):
-    id: int
-    timestamp: datetime
-    severity: int
-    message: str
-    variable: str
-    value: float
+class Events(models.Model):
+    id = fields.IntField(pk=True)
+    name = fields.CharField(max_length=200, null=False)
+    severity = fields.IntField(null=False)
+    message = fields.CharField(max_length=500, null=False)
+    timestamp = fields.DatetimeField(null=False)
+    source_node = fields.CharField(max_length=200, null=False)

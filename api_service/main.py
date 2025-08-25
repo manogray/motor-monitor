@@ -1,5 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from tortoise.contrib.fastapi import register_tortoise
+from config import TORTOISE_ORM
 
 from routes.motor import motor_router
 
@@ -10,6 +12,12 @@ app = FastAPI(
     version="1.0.0",
     description="API that provides data about Motor 50cv monitoring",
     terms_of_service="/terms"
+)
+
+register_tortoise(
+    app,
+    config=TORTOISE_ORM,
+    add_exception_handlers=True
 )
 
 app.add_middleware(
