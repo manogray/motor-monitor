@@ -29,3 +29,8 @@ app.add_middleware(
 )
 
 app.include_router(motor_router)
+
+
+@app.get("/")
+async def root():
+    return {"version": 1.0}
